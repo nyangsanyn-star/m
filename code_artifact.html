@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="ko" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Market Matrix - 시장 지표 대시보드</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Phosphor Icons for modern sleek financial icons -->
+  <script src="https://unpkg.com/@phosphor-icons/web"></script>
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            finDark: '#0B0E14',
+            finPanel: '#151922',
+            finCard: '#1C2331',
+            finBorder: '#273142',
+            bullRed: '#F43F5E',      /* 한국 금융 관행: 상승은 빨강 (Rose/Red) */
+            bullRedBg: 'rgba(244, 63, 94, 0.12)',
+            bearBlue: '#3B82F6',     /* 하락은 파랑 (Blue) */
+            bearBlueBg: 'rgba(59, 130, 246, 0.12)',
+            cryptoGreen: '#10B981',
+          },
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['JetBrains Mono', 'Roboto Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Price Flashes */
+    .flash-up {
+      animation: flashGreen 0.75s ease-out;
+    }
+    .flash-down {
+      animation: flashRed 0.75s ease-out;
+    }
+    @keyframes flashGreen {
+      0% { background-color: rgba(244, 63, 94, 0.45); }
+      100% { background-color: transparent; }
+    }
+    @keyframes flashRed {
+      0% { background-color: rgba(59, 130, 246, 0.45); }
+      100% { background-color: transparent; }
+    }
+
+    /* Gauge needle smooth transition */
+    #gauge-needle {
+      transition: transform 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    /* Ticker Marquee */
+    @keyframes marquee {
+      0% { transform: translateX(0%); }
+      100% { transform: translateX(-50%); }
+    }
+    .animate-ticker {
+      display: flex;
+      width: 200%;
+      animation: marquee 35s linear infinite;
+    }
+    .animate-ticker:hover {
+      animation-play-state: paused;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 dark:bg-finDark text-slate-800 dark:text-slate-100 min-h-screen transition-colors duration-200 antialiased selection:bg-rose-500 selection:text-white">
+
+  <!-- Top Navigation Header -->
+  <header class="sticky top-0 z-50 bg-white/90 dark:bg-finPanel/90 backdrop-blur-md border-b border-gray-200 dark:border-finBorder">
+    <div class="max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-rose-500 via-indigo-600 to-blue-500 flex items-center justify-center shadow-lg shadow-rose-500/20 text-white font-black text-xl tracking-tighter">
+          <i class="ph-bold ph-chart-polar"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-extrabold text-lg sm:text-xl tracking-tight bg-gradient-to-r from-rose-500 via-slate-900 to-indigo-600 dark:from-white dark:via-slate-200 dark:to-indigo-400 bg-clip-text text-transparent">MARKET MATRIX</span>
+            <span class="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/10 text-rose-500 dark:bg-rose-500/20 border border-rose-500/30">PRO LIVE</span>
+          </div>
+          <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">실시간 국내 & 글로벌 거시경제 시장 지표 터미널</p>
+        </div>
+      </div>
+
+      <!-- Quick Status & Global Clocks -->
+      <div class="hidden lg:flex items-center gap-6 text-xs text-slate-500 dark:text-slate-400 border-x border-gray-200 dark:border-finBorder px-6">
+        <div class="flex items-center gap-2">
+          <span class="relative flex h-2.5 w-2.5">
+            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+          </span>
+          <span class="font-medium text-slate-700 dark:text-slate-200">서울 KOSPI:</span>
+          <span class="text-emerald-500 font-semibold" id="seoul-market-status">정규장 거래중</span>
+        </div>
+        <div class="flex items-center gap-1 font-mono">
+          <i class="ph ph-clock text-sm"></i>
+          <span id="live-seoul-time">10:45:12 KST</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="font-medium text-slate-700 dark:text-slate-200">뉴욕 NYSE:</span>
+          <span class="text-amber-500 font-medium" id="ny-market-status">애프터마켓</span>
+        </div>
+      </div>
+
+      <!-- Controls: Live Sim Toggle, Search, Theme -->
+      <div class="flex items-center gap-3">
+        <!-- Live Sim Toggle -->
+        <button id="live-sim-toggle" title="실시간 호가 변동 시뮬레이션 토글" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/30 hover:bg-emerald-100 transition-all">
+          <i class="ph-fill ph-broadcast animate-pulse text-sm"></i>
+          <span class="hidden sm:inline">실시간 틱 반영중</span>
+        </button>
+
+        <!-- Theme Toggle -->
+        <button id="theme-toggle" class="p-2 rounded-lg bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 hover:text-rose-500 transition-colors border border-gray-200 dark:border-finBorder" aria-label="테마 전환">
+          <i class="ph-bold ph-moon dark:hidden text-lg"></i>
+          <i class="ph-bold ph-sun hidden dark:block text-lg"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Breaking / Key Indicator Marquee Ticker -->
+    <div class="bg-gray-100 dark:bg-finCard border-t border-gray-200 dark:border-finBorder text-xs overflow-hidden flex items-center h-8">
+      <div class="bg-rose-500 text-white font-bold px-3 py-1 text-[11px] shrink-0 z-10 flex items-center gap-1">
+        <i class="ph-bold ph-lightning"></i> 속보 및 동향
+      </div>
+      <div class="overflow-hidden relative w-full flex items-center">
+        <div class="animate-ticker text-slate-600 dark:text-slate-300 gap-8 items-center" id="ticker-content">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-[1680px] mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Top Row: Fear & Greed Index + Market Breadth Overview -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      
+      <!-- Fear & Greed Card (4 Cols on LG) -->
+      <div class="lg:col-span-4 bg-white dark:bg-finPanel rounded-2xl p-5 border border-gray-200 dark:border-finBorder shadow-sm flex flex-col justify-between relative overflow-hidden">
+        <div class="flex items-center justify-between mb-2">
+          <div class="flex items-center gap-2">
+            <div class="p-2 rounded-lg bg-orange-500/10 text-orange-500">
+              <i class="ph-bold ph-gauge text-xl"></i>
+            </div>
+            <div>
+              <h2 class="font-bold text-sm sm:text-base">시장 심리 (공포 & 탐욕 지수)</h2>
+              <p class="text-xs text-slate-400">CNN & VIX 지수 기반 복합 추정</p>
+            </div>
+          </div>
+          <span class="px-2.5 py-1 rounded-full text-xs font-bold text-emerald-600 bg-emerald-500/10 dark:text-emerald-400 border border-emerald-500/20" id="fg-label">탐욕 (Greed)</span>
+        </div>
+
+        <!-- Custom Gauge SVG -->
+        <div class="relative flex flex-col items-center justify-center my-2">
+          <svg class="w-64 h-32" viewBox="0 0 200 100">
+            <!-- Gradient arc definition -->
+            <defs>
+              <linearGradient id="gaugeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#3B82F6" />    <!-- 극단적 공포 -->
+                <stop offset="25%" stop-color="#60A5FA" />   <!-- 공포 -->
+                <stop offset="50%" stop-color="#E2E8F0" />   <!-- 중립 -->
+                <stop offset="75%" stop-color="#F59E0B" />   <!-- 탐욕 -->
+                <stop offset="100%" stop-color="#F43F5E" />  <!-- 극단적 탐욕 -->
+              </linearGradient>
+            </defs>
+            <path d="M 20 90 A 80 80 0 0 1 180 90" fill="none" stroke="#273142" stroke-width="16" stroke-linecap="round" class="dark:stroke-finBorder stroke-gray-200"/>
+            <path d="M 20 90 A 80 80 0 0 1 180 90" fill="none" stroke="url(#gaugeGrad)" stroke-width="16" stroke-linecap="round"/>
+            <!-- Gauge Needle -->
+            <g id="gauge-needle" transform="rotate(25 100 90)">
+              <polygon points="98,90 102,90 100,20" class="fill-slate-800 dark:fill-white" />
+              <circle cx="100" cy="90" r="7" class="fill-slate-900 dark:fill-slate-100" />
+            </g>
+          </svg>
+          <div class="text-center mt-[-10px]">
+            <span class="font-mono text-3xl font-black text-slate-800 dark:text-white" id="fg-score">68</span>
+            <span class="text-xs text-slate-400 font-medium">/ 100</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-4 gap-2 pt-3 border-t border-gray-100 dark:border-finBorder text-center text-xs">
+          <div>
+            <div class="text-slate-400 text-[10px]">어제</div>
+            <div class="font-bold text-slate-600 dark:text-slate-300">64</div>
+          </div>
+          <div>
+            <div class="text-slate-400 text-[10px]">지난주</div>
+            <div class="font-bold text-slate-600 dark:text-slate-300">55</div>
+          </div>
+          <div>
+            <div class="text-slate-400 text-[10px]">지난달</div>
+            <div class="font-bold text-slate-600 dark:text-slate-300">42 (공포)</div>
+          </div>
+          <div>
+            <div class="text-slate-400 text-[10px]">변동성 VIX</div>
+            <div class="font-bold text-rose-500 font-mono">14.82</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick KPI Summaries (8 cols on LG) -->
+      <div class="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <!-- Card 1: KOSPI -->
+        <div class="indicator-quick-card bg-white dark:bg-finPanel p-4 rounded-2xl border border-gray-200 dark:border-finBorder hover:border-rose-500/50 transition-all cursor-pointer shadow-sm relative group" data-id="kospi">
+          <div class="flex justify-between items-start">
+            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">코스피 KOSPI</span>
+            <span class="watchlist-star p-1 text-slate-400 hover:text-amber-400" data-star="kospi"><i class="ph-fill ph-star"></i></span>
+          </div>
+          <div class="mt-2">
+            <div class="font-mono text-xl sm:text-2xl font-bold tracking-tight text-bullRed" id="card-kospi-price">2,684.50</div>
+            <div class="flex items-center gap-1.5 text-xs font-semibold text-bullRed mt-0.5" id="card-kospi-diff">
+              <i class="ph-bold ph-caret-up"></i> +21.40 (+0.80%)
+            </div>
+          </div>
+          <div class="h-10 mt-3">
+            <canvas id="mini-kospi" class="w-full h-full"></canvas>
+          </div>
+        </div>
+
+        <!-- Card 2: S&P 500 -->
+        <div class="indicator-quick-card bg-white dark:bg-finPanel p-4 rounded-2xl border border-gray-200 dark:border-finBorder hover:border-rose-500/50 transition-all cursor-pointer shadow-sm relative group" data-id="sp500">
+          <div class="flex justify-between items-start">
+            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">S&P 500</span>
+            <span class="watchlist-star p-1 text-slate-400 hover:text-amber-400" data-star="sp500"><i class="ph-bold ph-star"></i></span>
+          </div>
+          <div class="mt-2">
+            <div class="font-mono text-xl sm:text-2xl font-bold tracking-tight text-bullRed" id="card-sp500-price">5,633.09</div>
+            <div class="flex items-center gap-1.5 text-xs font-semibold text-bullRed mt-0.5" id="card-sp500-diff">
+              <i class="ph-bold ph-caret-up"></i> +42.15 (+0.75%)
+            </div>
+          </div>
+          <div class="h-10 mt-3">
+            <canvas id="mini-sp500" class="w-full h-full"></canvas>
+          </div>
+        </div>
+
+        <!-- Card 3: USD / KRW -->
+        <div class="indicator-quick-card bg-white dark:bg-finPanel p-4 rounded-2xl border border-gray-200 dark:border-finBorder hover:border-rose-500/50 transition-all cursor-pointer shadow-sm relative group" data-id="usdkrw">
+          <div class="flex justify-between items-start">
+            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">원/달러 환율</span>
+            <span class="watchlist-star p-1 text-slate-400 hover:text-amber-400" data-star="usdkrw"><i class="ph-bold ph-star"></i></span>
+          </div>
+          <div class="mt-2">
+            <div class="font-mono text-xl sm:text-2xl font-bold tracking-tight text-bearBlue" id="card-usdkrw-price">1,332.80</div>
+            <div class="flex items-center gap-1.5 text-xs font-semibold text-bearBlue mt-0.5" id="card-usdkrw-diff">
+              <i class="ph-bold ph-caret-down"></i> -4.20 (-0.31%)
+            </div>
+          </div>
+          <div class="h-10 mt-3">
+            <canvas id="mini-usdkrw" class="w-full h-full"></canvas>
+          </div>
+        </div>
+
+        <!-- Card 4: Bitcoin BTC -->
+        <div class="indicator-quick-card bg-white dark:bg-finPanel p-4 rounded-2xl border border-gray-200 dark:border-finBorder hover:border-rose-500/50 transition-all cursor-pointer shadow-sm relative group" data-id="btc">
+          <div class="flex justify-between items-start">
+            <span class="text-xs font-semibold text-slate-500 dark:text-slate-400">비트코인 (BTC/KRW)</span>
+            <span class="watchlist-star p-1 text-slate-400 hover:text-amber-400" data-star="btc"><i class="ph-bold ph-star"></i></span>
+          </div>
+          <div class="mt-2">
+            <div class="font-mono text-xl sm:text-2xl font-bold tracking-tight text-bullRed" id="card-btc-price">88,240,000</div>
+            <div class="flex items-center gap-1.5 text-xs font-semibold text-bullRed mt-0.5" id="card-btc-diff">
+              <i class="ph-bold ph-caret-up"></i> +1,520,000 (+1.75%)
+            </div>
+          </div>
+          <div class="h-10 mt-3">
+            <canvas id="mini-btc" class="w-full h-full"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <!-- Main Interactive Chart (2 cols on XL) -->
+      <div class="xl:col-span-2 bg-white dark:bg-finPanel rounded-2xl p-5 border border-gray-200 dark:border-finBorder shadow-sm flex flex-col">
+        <!-- Chart Header Controls -->
+        <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-gray-200 dark:border-finBorder">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="font-black text-xl sm:text-2xl" id="active-asset-name">코스피 (KOSPI)</span>
+              <span class="text-xs px-2 py-0.5 font-mono rounded bg-gray-100 dark:bg-finCard text-slate-500" id="active-asset-code">KRX: 001</span>
+            </div>
+            <div class="flex items-baseline gap-2 mt-1">
+              <span class="text-2xl sm:text-3xl font-mono font-bold" id="active-asset-price">2,684.50</span>
+              <span class="text-sm font-semibold flex items-center font-mono" id="active-asset-change">+21.40 (+0.80%)</span>
+            </div>
+          </div>
+
+          <!-- Timeframe & Chart Style toggles -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <!-- Timeframe selector -->
+            <div class="flex bg-gray-100 dark:bg-finCard p-1 rounded-xl border border-gray-200 dark:border-finBorder text-xs font-semibold">
+              <button class="tf-btn px-3 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-white" data-tf="1D">1일</button>
+              <button class="tf-btn px-3 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-white" data-tf="1W">1주</button>
+              <button class="tf-btn px-3 py-1 rounded-lg bg-rose-500 text-white shadow-sm" data-tf="1M">1개월</button>
+              <button class="tf-btn px-3 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-white" data-tf="1Y">1년</button>
+            </div>
+
+            <!-- Chart Type -->
+            <div class="flex bg-gray-100 dark:bg-finCard p-1 rounded-xl border border-gray-200 dark:border-finBorder text-xs">
+              <button id="chart-type-line" class="px-2.5 py-1 rounded-lg bg-rose-500 text-white font-bold" title="영역 선형 차트">
+                <i class="ph-bold ph-chart-line"></i>
+              </button>
+              <button id="chart-type-bar" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white font-bold" title="변동폭 바 차트">
+                <i class="ph-bold ph-chart-bar"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- The Canvas -->
+        <div class="relative w-full h-[320px] sm:h-[380px] pt-4">
+          <canvas id="mainMarketChart"></canvas>
+        </div>
+
+        <!-- Chart Footer Key Stats -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4 mt-2 border-t border-gray-100 dark:border-finBorder text-xs">
+          <div class="p-2.5 rounded-xl bg-gray-50 dark:bg-finCard/50">
+            <span class="text-slate-400 block text-[11px]">당일 고가 (High)</span>
+            <span class="font-mono font-bold text-slate-800 dark:text-slate-100" id="stat-high">2,692.10</span>
+          </div>
+          <div class="p-2.5 rounded-xl bg-gray-50 dark:bg-finCard/50">
+            <span class="text-slate-400 block text-[11px]">당일 저가 (Low)</span>
+            <span class="font-mono font-bold text-slate-800 dark:text-slate-100" id="stat-low">2,668.30</span>
+          </div>
+          <div class="p-2.5 rounded-xl bg-gray-50 dark:bg-finCard/50">
+            <span class="text-slate-400 block text-[11px]">52주 최고</span>
+            <span class="font-mono font-bold text-slate-800 dark:text-slate-100" id="stat-52h">2,896.43</span>
+          </div>
+          <div class="p-2.5 rounded-xl bg-gray-50 dark:bg-finCard/50">
+            <span class="text-slate-400 block text-[11px]">거래대금 / 거래량</span>
+            <span class="font-mono font-bold text-slate-800 dark:text-slate-100" id="stat-volume">10.4조 원</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="space-y-6">
+        <!-- Quick FX & Asset Calculator -->
+        <div class="bg-white dark:bg-finPanel rounded-2xl p-5 border border-gray-200 dark:border-finBorder shadow-sm">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="p-1.5 rounded-lg bg-indigo-500/10 text-indigo-500">
+              <i class="ph-bold ph-currency-dollar-simple text-lg"></i>
+            </div>
+            <h3 class="font-bold text-sm sm:text-base">스마트 환율 및 자산 계산기</h3>
+          </div>
+
+          <div class="space-y-3">
+            <div>
+              <label class="text-[11px] font-medium text-slate-400">금액 입력</label>
+              <div class="relative mt-1">
+                <input type="number" id="calc-amount" value="1000" class="w-full bg-gray-50 dark:bg-finCard border border-gray-200 dark:border-finBorder rounded-xl px-3 py-2 text-sm font-mono focus:outline-none focus:border-rose-500">
+                <select id="calc-from" class="absolute right-1 top-1 bottom-1 bg-transparent text-xs font-semibold px-2 focus:outline-none dark:text-slate-200">
+                  <option value="USD" class="dark:bg-finPanel">USD ($)</option>
+                  <option value="JPY" class="dark:bg-finPanel">JPY (100엔)</option>
+                  <option value="KRW" class="dark:bg-finPanel">KRW (원)</option>
+                  <option value="BTC" class="dark:bg-finPanel">BTC (코인)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="flex justify-center -my-1">
+              <button id="swap-calc" class="p-1 rounded-full bg-gray-100 dark:bg-finCard hover:bg-rose-500 hover:text-white transition-colors text-slate-400">
+                <i class="ph-bold ph-arrows-down-up text-sm"></i>
+              </button>
+            </div>
+
+            <div>
+              <label class="text-[11px] font-medium text-slate-400">환산 대상 통화</label>
+              <div class="relative mt-1">
+                <input type="text" id="calc-result" readonly value="1,332,800 원" class="w-full bg-gray-100 dark:bg-finCard/70 border border-gray-200 dark:border-finBorder rounded-xl px-3 py-2 text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                <select id="calc-to" class="absolute right-1 top-1 bottom-1 bg-transparent text-xs font-semibold px-2 focus:outline-none dark:text-slate-200">
+                  <option value="KRW" class="dark:bg-finPanel">KRW (원)</option>
+                  <option value="USD" class="dark:bg-finPanel">USD ($)</option>
+                  <option value="JPY" class="dark:bg-finPanel">JPY (엔)</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <p class="text-[11px] text-slate-400 mt-2 text-right">실시간 기준 환율: 1 USD = 1,332.80 KRW</p>
+        </div>
+
+        <!-- Key Economic Calendar / Event Schedule -->
+        <div class="bg-white dark:bg-finPanel rounded-2xl p-5 border border-gray-200 dark:border-finBorder shadow-sm">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <div class="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-500">
+                <i class="ph-bold ph-calendar-check text-lg"></i>
+              </div>
+              <h3 class="font-bold text-sm sm:text-base">주요 거시경제 캘린더</h3>
+            </div>
+            <span class="text-[11px] text-slate-400 font-mono">D-DAY</span>
+          </div>
+
+          <div class="space-y-2.5 text-xs">
+            <!-- Event 1 -->
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 dark:bg-finCard border border-gray-100 dark:border-finBorder/60">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-bullRed"></span>
+                <div>
+                  <div class="font-semibold text-slate-700 dark:text-slate-200">미국 연준 FOMC 금리결정</div>
+                  <div class="text-[10px] text-slate-400">예상: 25bp 인하 | 이전: 5.25~5.50%</div>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded bg-rose-500/10 text-rose-500 font-mono font-bold text-[11px]">D-2</span>
+            </div>
+
+            <!-- Event 2 -->
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 dark:bg-finCard border border-gray-100 dark:border-finBorder/60">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-amber-500"></span>
+                <div>
+                  <div class="font-semibold text-slate-700 dark:text-slate-200">미국 소비자물가지수 (CPI)</div>
+                  <div class="text-[10px] text-slate-400">예상 YoY: 2.5% | 헤드라인</div>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 font-mono font-bold text-[11px]">D-5</span>
+            </div>
+
+            <!-- Event 3 -->
+            <div class="flex items-center justify-between p-2.5 rounded-xl bg-gray-50 dark:bg-finCard border border-gray-100 dark:border-finBorder/60">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+                <div>
+                  <div class="font-semibold text-slate-700 dark:text-slate-200">한국은행 금융통화위원회</div>
+                  <div class="text-[10px] text-slate-400">기준금리 결정 및 통화정책방향</div>
+                </div>
+              </div>
+              <span class="px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-mono font-bold text-[11px]">D-14</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-finPanel rounded-2xl p-5 border border-gray-200 dark:border-finBorder shadow-sm">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+        <!-- Categories Filter -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0" id="category-tabs">
+          <button class="cat-filter-btn px-3.5 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-bold whitespace-nowrap shadow-sm" data-category="ALL">전체 지표</button>
+          <button class="cat-filter-btn px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 text-xs font-semibold whitespace-nowrap hover:bg-gray-200 dark:hover:bg-slate-700" data-category="DOMESTIC">국내 주가지수</button>
+          <button class="cat-filter-btn px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 text-xs font-semibold whitespace-nowrap hover:bg-gray-200 dark:hover:bg-slate-700" data-category="GLOBAL">글로벌 지수</button>
+          <button class="cat-filter-btn px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 text-xs font-semibold whitespace-nowrap hover:bg-gray-200 dark:hover:bg-slate-700" data-category="FX_BOND">환율 & 채권금리</button>
+          <button class="cat-filter-btn px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 text-xs font-semibold whitespace-nowrap hover:bg-gray-200 dark:hover:bg-slate-700" data-category="COMMODITY_CRYPTO">원자재 & 코인</button>
+          <button class="cat-filter-btn px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 text-xs font-semibold whitespace-nowrap hover:bg-gray-200 dark:hover:bg-slate-700" data-category="WATCHLIST">
+            <i class="ph-fill ph-star text-amber-400 mr-1"></i>관심종목
+          </button>
+        </div>
+
+        <!-- Search input -->
+        <div class="relative w-full sm:w-64">
+          <i class="ph ph-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+          <input type="text" id="indicator-search" placeholder="지표명, 심볼 검색 (예: 나스닥, WTI)..." class="w-full bg-gray-50 dark:bg-finCard border border-gray-200 dark:border-finBorder rounded-xl pl-9 pr-3 py-1.5 text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-rose-500">
+        </div>
+      </div>
+
+      <!-- Indicators Grid View -->
+      <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5" id="indicators-list">
+        <!-- Rendered dynamically by JavaScript -->
+      </div>
+    </div>
+  </main>
+
+  <script>
+    /* -------------------------------------------------------------
+       1. Core Market Data Model (국내, 글로벌, 환율/채권, 원자재/암호화폐)
+    -------------------------------------------------------------- */
+    const marketData = [
+      // 국내 주요 지수
+      {
+        id: 'kospi',
+        name: '코스피 (KOSPI)',
+        category: 'DOMESTIC',
+        symbol: 'KRX: 001',
+        unit: 'pt',
+        price: 2684.50,
+        change: 21.40,
+        changePercent: 0.80,
+        high: 2692.10,
+        low: 2668.30,
+        high52w: 2896.43,
+        low52w: 2273.97,
+        volume: '10.4조 원',
+        sparkline: [2650, 2658, 2670, 2662, 2675, 2671, 2684.5],
+        history: {
+          '1D': [2668, 2672, 2670, 2677, 2680, 2678, 2684.5],
+          '1W': [2630, 2642, 2660, 2655, 2670, 2665, 2684.5],
+          '1M': [2580, 2610, 2595, 2640, 2660, 2650, 2684.5],
+          '1Y': [2450, 2520, 2600, 2750, 2890, 2600, 2684.5]
+        }
+      },
+      {
+        id: 'kosdaq',
+        name: '코스닥 (KOSDAQ)',
+        category: 'DOMESTIC',
+        symbol: 'KRX: 101',
+        unit: 'pt',
+        price: 775.25,
+        change: 8.65,
+        changePercent: 1.13,
+        high: 778.90,
+        low: 765.40,
+        high52w: 920.50,
+        low52w: 712.30,
+        volume: '6.8조 원',
+        sparkline: [760, 762, 765, 769, 771, 770, 775.25],
+        history: {
+          '1D': [765, 767, 770, 768, 772, 774, 775.25],
+          '1W': [750, 755, 758, 764, 769, 772, 775.25],
+          '1M': [740, 752, 760, 755, 768, 770, 775.25],
+          '1Y': [820, 860, 890, 840, 780, 750, 775.25]
+        }
+      },
+      {
+        id: 'kospi200',
+        name: '코스피 200',
+        category: 'DOMESTIC',
+        symbol: 'KRX: 200',
+        unit: 'pt',
+        price: 361.80,
+        change: 2.95,
+        changePercent: 0.82,
+        high: 362.50,
+        low: 359.10,
+        high52w: 395.20,
+        low52w: 308.50,
+        volume: '7.9조 원',
+        sparkline: [357, 358, 359, 360, 360.5, 361, 361.8],
+        history: {
+          '1D': [359, 359.5, 360.2, 360.9, 361.2, 361.5, 361.8],
+          '1W': [354, 356, 357, 359, 360, 361, 361.8],
+          '1M': [348, 352, 355, 358, 360, 359, 361.8],
+          '1Y': [330, 345, 370, 390, 375, 355, 361.8]
+        }
+      },
+
+      // 글로벌 주요 지수
+      {
+        id: 'sp500',
+        name: 'S&P 500',
+        category: 'GLOBAL',
+        symbol: 'INDEX: .INX',
+        unit: 'pt',
+        price: 5633.09,
+        change: 42.15,
+        changePercent: 0.75,
+        high: 5645.20,
+        low: 5590.10,
+        high52w: 5669.67,
+        low52w: 4103.78,
+        volume: '42.1억 주',
+        sparkline: [5570, 5585, 5600, 5615, 5620, 5628, 5633.09],
+        history: {
+          '1D': [5595, 5605, 5618, 5622, 5625, 5630, 5633.09],
+          '1W': [5520, 5545, 5580, 5600, 5610, 5625, 5633.09],
+          '1M': [5400, 5450, 5510, 5560, 5590, 5610, 5633.09],
+          '1Y': [4300, 4700, 5000, 5200, 5450, 5550, 5633.09]
+        }
+      },
+      {
+        id: 'nasdaq',
+        name: '나스닥 종합 (NASDAQ)',
+        category: 'GLOBAL',
+        symbol: 'INDEX: .IXIC',
+        unit: 'pt',
+        price: 17683.98,
+        change: 182.20,
+        changePercent: 1.04,
+        high: 17740.50,
+        low: 17520.10,
+        high52w: 18671.07,
+        low52w: 12543.86,
+        volume: '56.3억 주',
+        sparkline: [17450, 17510, 17590, 17620, 17650, 17670, 17683.98],
+        history: {
+          '1D': [17520, 17560, 17610, 17640, 17660, 17675, 17683.98],
+          '1W': [17200, 17350, 17480, 17550, 17610, 17650, 17683.98],
+          '1M': [16800, 17100, 17300, 17450, 17520, 17600, 17683.98],
+          '1Y': [13000, 14500, 16000, 17000, 18400, 17200, 17683.98]
+        }
+      },
+      {
+        id: 'dow',
+        name: '다우존스 산업 (DOW)',
+        category: 'GLOBAL',
+        symbol: 'INDEX: .DJI',
+        unit: 'pt',
+        price: 41393.78,
+        change: 140.10,
+        changePercent: 0.34,
+        high: 41450.20,
+        low: 41220.00,
+        high52w: 41585.21,
+        low52w: 32417.59,
+        volume: '3.4억 주',
+        sparkline: [41200, 41250, 41310, 41350, 41380, 41390, 41393.78],
+        history: {
+          '1D': [41240, 41280, 41320, 41350, 41370, 41385, 41393.78],
+          '1W': [40800, 40950, 41100, 41250, 41320, 41370, 41393.78],
+          '1M': [40100, 40400, 40750, 41100, 41200, 41300, 41393.78],
+          '1Y': [33500, 36000, 38500, 39500, 40500, 41000, 41393.78]
+        }
+      },
+      {
+        id: 'nikkei',
+        name: '니케이 225 (Nikkei)',
+        category: 'GLOBAL',
+        symbol: 'INDEX: .N225',
+        unit: 'JPY',
+        price: 36581.76,
+        change: -250.30,
+        changePercent: -0.68,
+        high: 36900.50,
+        low: 36450.00,
+        high52w: 42426.77,
+        low52w: 30538.29,
+        volume: '14.2억 주',
+        sparkline: [36900, 36820, 36740, 36690, 36620, 36590, 36581.76],
+        history: {
+          '1D': [36850, 36800, 36720, 36680, 36630, 36600, 36581.76],
+          '1W': [37200, 37050, 36900, 36800, 36700, 36620, 36581.76],
+          '1M': [38000, 37600, 37200, 36900, 36750, 36650, 36581.76],
+          '1Y': [32000, 34000, 38000, 41000, 35000, 36000, 36581.76]
+        }
+      },
+
+      // 환율 및 채권금리
+      {
+        id: 'usdkrw',
+        name: '원/달러 환율 (USD/KRW)',
+        category: 'FX_BOND',
+        symbol: 'FX: USDKRW',
+        unit: '원',
+        price: 1332.80,
+        change: -4.20,
+        changePercent: -0.31,
+        high: 1338.50,
+        low: 1331.20,
+        high52w: 1400.20,
+        low52w: 1275.40,
+        volume: '외환시장 거래',
+        sparkline: [1339, 1337, 1336, 1334, 1333, 1333.5, 1332.8],
+        history: {
+          '1D': [1337, 1336, 1335, 1334, 1333.5, 1333, 1332.8],
+          '1W': [1345, 1342, 1339, 1336, 1334, 1333, 1332.8],
+          '1M': [1365, 1358, 1350, 1342, 1338, 1335, 1332.8],
+          '1Y': [1310, 1340, 1380, 1390, 1360, 1345, 1332.8]
+        }
+      },
+      {
+        id: 'jpykrw',
+        name: '원/엔 환율 (100엔당)',
+        category: 'FX_BOND',
+        symbol: 'FX: 100JPYKRW',
+        unit: '원',
+        price: 946.50,
+        change: 3.10,
+        changePercent: 0.33,
+        high: 948.20,
+        low: 942.00,
+        high52w: 955.10,
+        low52w: 852.30,
+        volume: '외환시장 거래',
+        sparkline: [941, 942, 944, 943, 945, 946, 946.5],
+        history: {
+          '1D': [942, 943, 944, 945, 945.5, 946, 946.5],
+          '1W': [935, 938, 940, 942, 944, 945, 946.5],
+          '1M': [910, 920, 930, 938, 942, 945, 946.5],
+          '1Y': [880, 890, 865, 875, 915, 935, 946.5]
+        }
+      },
+      {
+        id: 'us10y',
+        name: '미 국채 10년물 금리',
+        category: 'FX_BOND',
+        symbol: 'BOND: US10Y',
+        unit: '%',
+        price: 3.652,
+        change: -0.024,
+        changePercent: -0.65,
+        high: 3.685,
+        low: 3.641,
+        high52w: 4.997,
+        low52w: 3.612,
+        volume: '글로벌 벤치마크',
+        sparkline: [3.71, 3.69, 3.68, 3.67, 3.66, 3.655, 3.652],
+        history: {
+          '1D': [3.68, 3.675, 3.67, 3.665, 3.66, 3.655, 3.652],
+          '1W': [3.75, 3.73, 3.70, 3.68, 3.67, 3.66, 3.652],
+          '1M': [3.95, 3.88, 3.82, 3.76, 3.71, 3.68, 3.652],
+          '1Y': [4.60, 4.85, 4.30, 4.45, 4.20, 3.80, 3.652]
+        }
+      },
+      {
+        id: 'kr3y',
+        name: '한국 국고채 3년물',
+        category: 'FX_BOND',
+        symbol: 'BOND: KR3Y',
+        unit: '%',
+        price: 2.875,
+        change: -0.015,
+        changePercent: -0.52,
+        high: 2.895,
+        low: 2.865,
+        high52w: 3.985,
+        low52w: 2.850,
+        volume: '국내 기준금리 선행',
+        sparkline: [2.91, 2.90, 2.89, 2.885, 2.88, 2.878, 2.875],
+        history: {
+          '1D': [2.89, 2.885, 2.882, 2.88, 2.878, 2.876, 2.875],
+          '1W': [2.94, 2.93, 2.91, 2.90, 2.89, 2.88, 2.875],
+          '1M': [3.05, 3.01, 2.97, 2.93, 2.90, 2.88, 2.875],
+          '1Y': [3.85, 3.70, 3.50, 3.40, 3.15, 2.95, 2.875]
+        }
+      },
+
+      // 원자재 및 암호화폐
+      {
+        id: 'wti',
+        name: 'WTI 원유 (Crude Oil)',
+        category: 'COMMODITY_CRYPTO',
+        symbol: 'COMM: CL1!',
+        unit: '$',
+        price: 69.85,
+        change: 1.15,
+        changePercent: 1.67,
+        high: 70.40,
+        low: 68.50,
+        high52w: 93.98,
+        low52w: 65.27,
+        volume: '배럴당 NYMEX',
+        sparkline: [68.2, 68.5, 68.9, 69.1, 69.4, 69.6, 69.85],
+        history: {
+          '1D': [68.6, 68.9, 69.2, 69.4, 69.5, 69.7, 69.85],
+          '1W': [67.0, 67.5, 68.2, 68.8, 69.2, 69.5, 69.85],
+          '1M': [74.5, 73.0, 71.5, 69.8, 68.5, 69.2, 69.85],
+          '1Y': [88.0, 82.0, 76.0, 84.0, 80.0, 72.0, 69.85]
+        }
+      },
+      {
+        id: 'gold',
+        name: '국제 금 (Gold Futures)',
+        category: 'COMMODITY_CRYPTO',
+        symbol: 'COMM: GC1!',
+        unit: '$',
+        price: 2582.40,
+        change: 8.70,
+        changePercent: 0.34,
+        high: 2588.60,
+        low: 2574.00,
+        high52w: 2590.20,
+        low52w: 1810.10,
+        volume: '온스당 COMEX',
+        sparkline: [2565, 2569, 2572, 2576, 2578, 2580, 2582.4],
+        history: {
+          '1D': [2573, 2575, 2577, 2579, 2580, 2581, 2582.4],
+          '1W': [2530, 2542, 2555, 2568, 2575, 2580, 2582.4],
+          '1M': [2450, 2480, 2505, 2525, 2550, 2570, 2582.4],
+          '1Y': [1950, 2050, 2150, 2300, 2400, 2500, 2582.4]
+        }
+      },
+      {
+        id: 'btc',
+        name: '비트코인 (BTC/KRW)',
+        category: 'COMMODITY_CRYPTO',
+        symbol: 'CRYPTO: BTC',
+        unit: '원',
+        price: 88240000,
+        change: 1520000,
+        changePercent: 1.75,
+        high: 88900000,
+        low: 86400000,
+        high52w: 104500000,
+        low52w: 36500000,
+        volume: '2,840억 원 (업비트)',
+        sparkline: [86200000, 86600000, 87100000, 87500000, 87800000, 88100000, 88240000],
+        history: {
+          '1D': [86500000, 86900000, 87200000, 87600000, 87900000, 88100000, 88240000],
+          '1W': [82000000, 83500000, 84800000, 86000000, 87200000, 87800000, 88240000],
+          '1M': [81000000, 82500000, 84000000, 85500000, 86500000, 87500000, 88240000],
+          '1Y': [38000000, 52000000, 72000000, 95000000, 85000000, 88000000, 88240000]
+        }
+      },
+      {
+        id: 'eth',
+        name: '이더리움 (ETH/KRW)',
+        category: 'COMMODITY_CRYPTO',
+        symbol: 'CRYPTO: ETH',
+        unit: '원',
+        price: 3342000,
+        change: 62000,
+        changePercent: 1.89,
+        high: 3380000,
+        low: 3260000,
+        high52w: 5400000,
+        low52w: 2150000,
+        volume: '1,120억 원 (업비트)',
+        sparkline: [3240000, 3270000, 3290000, 3310000, 3320000, 3335000, 3342000],
+        history: {
+          '1D': [3260000, 3280000, 3300000, 3315000, 3330000, 3338000, 3342000],
+          '1W': [3100000, 3150000, 3200000, 3240000, 3280000, 3320000, 3342000],
+          '1M': [3450000, 3350000, 3250000, 3180000, 3260000, 3310000, 3342000],
+          '1Y': [2200000, 3000000, 4200000, 5100000, 4400000, 3500000, 3342000]
+        }
+      }
+    ];
+
+    /* -------------------------------------------------------------
+       2. Application State
+    -------------------------------------------------------------- */
+    let currentSelectedId = 'kospi';
+    let currentTimeframe = '1M';
+    let currentChartType = 'line';
+    let currentCategory = 'ALL';
+    let searchQuery = '';
+    let isLiveSimActive = true;
+    let liveSimInterval = null;
+    let mainChartInstance = null;
+    const miniCharts = {};
+
+    // Watchlist persistence with localStorage
+    let watchlist = JSON.parse(localStorage.getItem('market_watchlist') || '["kospi", "sp500", "usdkrw", "btc"]');
+
+    /* -------------------------------------------------------------
+       3. Utility Formatting Helpers
+    -------------------------------------------------------------- */
+    function formatNumber(val, decimals = 2) {
+      if (val >= 100000) {
+        return Math.round(val).toLocaleString();
+      }
+      return Number(val).toLocaleString(undefined, {
+        minimumFractionDigits: decimals,
+        maximumFractionDigits: decimals
+      });
+    }
+
+    function formatChange(change, pct, unit = '') {
+      const isUp = change >= 0;
+      const sign = isUp ? '+' : '';
+      return `${sign}${formatNumber(change)} ${unit} (${sign}${pct.toFixed(2)}%)`;
+    }
+
+    /* -------------------------------------------------------------
+       4. Chart.js Initialization & Management
+    -------------------------------------------------------------- */
+    function initMainChart() {
+      const ctx = document.getElementById('mainMarketChart').getContext('2d');
+      const isDark = document.documentElement.classList.contains('dark');
+      const gridColor = isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.05)';
+      const textColor = isDark ? '#94A3B8' : '#64748B';
+
+      const item = marketData.find(d => d.id === currentSelectedId) || marketData[0];
+      const dataPoints = item.history[currentTimeframe];
+      const isBull = item.change >= 0;
+      const themeColor = isBull ? '#F43F5E' : '#3B82F6';
+
+      // Gradient Fill
+      const gradient = ctx.createLinearGradient(0, 0, 0, 340);
+      gradient.addColorStop(0, isBull ? 'rgba(244, 63, 94, 0.35)' : 'rgba(59, 130, 246, 0.35)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+      // Generate labels based on timeframe
+      const labels = generateLabels(currentTimeframe, dataPoints.length);
+
+      mainChartInstance = new Chart(ctx, {
+        type: currentChartType,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: item.name,
+            data: [...dataPoints],
+            borderColor: themeColor,
+            borderWidth: 2.5,
+            pointBackgroundColor: themeColor,
+            pointBorderColor: '#ffffff',
+            pointHoverRadius: 6,
+            pointRadius: currentChartType === 'bar' ? 0 : 3,
+            backgroundColor: currentChartType === 'bar' ? themeColor : gradient,
+            fill: currentChartType === 'line',
+            tension: 0.35
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: isDark ? '#1C2331' : '#FFFFFF',
+              titleColor: isDark ? '#F1F5F9' : '#0F172A',
+              bodyColor: isDark ? '#E2E8F0' : '#1E293B',
+              borderColor: isDark ? '#334155' : '#E2E8F0',
+              borderWidth: 1,
+              padding: 12,
+              boxPadding: 6,
+              usePointStyle: true,
+              callbacks: {
+                label: function(context) {
+                  return `현재가: ${formatNumber(context.parsed.y)} ${item.unit}`;
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: gridColor },
+              ticks: { color: textColor, font: { family: 'Pretendard', size: 11 } }
+            },
+            y: {
+              position: 'right',
+              grid: { color: gridColor },
+              ticks: {
+                color: textColor,
+                font: { family: 'JetBrains Mono', size: 11 },
+                callback: function(value) {
+                  return formatNumber(value, item.price >= 10000 ? 0 : 2);
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function generateLabels(tf, count) {
+      if (tf === '1D') return ['09:00', '10:30', '12:00', '13:30', '14:30', '15:15', '현재'];
+      if (tf === '1W') return ['월', '화', '수', '목', '금', '전일', '오늘'];
+      if (tf === '1M') return ['4주전', '3주전', '2주전', '1주전', '5일전', '2일전', '현재'];
+      return ['1분기', '2분기', '3분기', '4분기', '전분기', '전월', '현재'];
+    }
+
+    function updateMainChart() {
+      if (!mainChartInstance) return;
+      const item = marketData.find(d => d.id === currentSelectedId) || marketData[0];
+      const dataPoints = item.history[currentTimeframe];
+      const isBull = item.change >= 0;
+      const themeColor = isBull ? '#F43F5E' : '#3B82F6';
+
+      const ctx = mainChartInstance.ctx;
+      const gradient = ctx.createLinearGradient(0, 0, 0, 340);
+      gradient.addColorStop(0, isBull ? 'rgba(244, 63, 94, 0.35)' : 'rgba(59, 130, 246, 0.35)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.0)');
+
+      mainChartInstance.config.type = currentChartType;
+      mainChartInstance.data.labels = generateLabels(currentTimeframe, dataPoints.length);
+      mainChartInstance.data.datasets[0].label = item.name;
+      mainChartInstance.data.datasets[0].data = [...dataPoints];
+      mainChartInstance.data.datasets[0].borderColor = themeColor;
+      mainChartInstance.data.datasets[0].pointBackgroundColor = themeColor;
+      mainChartInstance.data.datasets[0].backgroundColor = currentChartType === 'bar' ? themeColor : gradient;
+      mainChartInstance.data.datasets[0].fill = currentChartType === 'line';
+      mainChartInstance.data.datasets[0].pointRadius = currentChartType === 'bar' ? 0 : 3;
+
+      mainChartInstance.update();
+
+      // Update text stats in the main panel
+      document.getElementById('active-asset-name').innerText = item.name;
+      document.getElementById('active-asset-code').innerText = item.symbol;
+      document.getElementById('active-asset-price').innerText = `${formatNumber(item.price)} ${item.unit}`;
+      
+      const changeEl = document.getElementById('active-asset-change');
+      changeEl.className = `text-sm font-semibold flex items-center font-mono ${isBull ? 'text-bullRed' : 'text-bearBlue'}`;
+      changeEl.innerHTML = `<i class="ph-bold ${isBull ? 'ph-caret-up' : 'ph-caret-down'} mr-0.5"></i> ${formatChange(item.change, item.changePercent, item.unit)}`;
+
+      document.getElementById('stat-high').innerText = `${formatNumber(item.high)} ${item.unit}`;
+      document.getElementById('stat-low').innerText = `${formatNumber(item.low)} ${item.unit}`;
+      document.getElementById('stat-52h').innerText = `${formatNumber(item.high52w)} ${item.unit}`;
+      document.getElementById('stat-volume').innerText = item.volume;
+    }
+
+    function initMiniSparklines() {
+      const topKeys = ['kospi', 'sp500', 'usdkrw', 'btc'];
+      topKeys.forEach(id => {
+        const item = marketData.find(m => m.id === id);
+        const canvas = document.getElementById(`mini-${id}`);
+        if (!canvas || !item) return;
+
+        const isBull = item.change >= 0;
+        const color = isBull ? '#F43F5E' : '#3B82F6';
+
+        miniCharts[id] = new Chart(canvas.getContext('2d'), {
+          type: 'line',
+          data: {
+            labels: item.sparkline.map((_, i) => i),
+            datasets: [{
+              data: item.sparkline,
+              borderColor: color,
+              borderWidth: 1.8,
+              fill: false,
+              pointRadius: 0,
+              tension: 0.3
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: { x: { display: false }, y: { display: false } }
+          }
+        });
+      });
+    }
+
+    /* -------------------------------------------------------------
+       5. Indicator Grid & Cards Rendering
+    -------------------------------------------------------------- */
+    function renderIndicatorsList() {
+      const container = document.getElementById('indicators-list');
+      container.innerHTML = '';
+
+      const filtered = marketData.filter(item => {
+        // Category Filter
+        if (currentCategory === 'WATCHLIST' && !watchlist.includes(item.id)) return false;
+        if (currentCategory !== 'ALL' && currentCategory !== 'WATCHLIST' && item.category !== currentCategory) return false;
+        // Search Filter
+        if (searchQuery.trim() !== '') {
+          const q = searchQuery.toLowerCase();
+          return item.name.toLowerCase().includes(q) || item.symbol.toLowerCase().includes(q);
+        }
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        container.innerHTML = `
+          <div class="col-span-full py-12 text-center text-slate-400">
+            <i class="ph ph-magnifying-glass text-3xl mb-2"></i>
+            <p class="text-sm">해당 조건에 일치하는 시장 지표가 없습니다.</p>
+          </div>
+        `;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const isBull = item.change >= 0;
+        const isWatched = watchlist.includes(item.id);
+        const isSelected = item.id === currentSelectedId;
+
+        const card = document.createElement('div');
+        card.id = `card-${item.id}`;
+        card.className = `p-4 rounded-xl border transition-all cursor-pointer select-none relative group ${
+          isSelected 
+            ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-500 shadow-sm' 
+            : 'bg-gray-50/70 dark:bg-finCard/70 border-gray-200/80 dark:border-finBorder hover:border-slate-400 dark:hover:border-slate-500'
+        }`;
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between gap-2">
+            <div class="flex-1">
+              <div class="flex items-center gap-1.5">
+                <span class="font-bold text-sm text-slate-800 dark:text-slate-100">${item.name}</span>
+                <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-gray-200/70 dark:bg-finPanel text-slate-500">${item.symbol}</span>
+              </div>
+              <div class="mt-2 flex items-baseline gap-2">
+                <span class="font-mono text-lg font-extrabold ${isBull ? 'text-bullRed' : 'text-bearBlue'} item-price-val">
+                  ${formatNumber(item.price)}
+                </span>
+                <span class="text-xs text-slate-400 font-mono">${item.unit}</span>
+              </div>
+            </div>
+            <button class="star-toggle-btn text-slate-300 dark:text-slate-600 hover:text-amber-400 transition-colors p-1" data-id="${item.id}" title="관심종목 토글">
+              <i class="ph-fill ph-star ${isWatched ? 'text-amber-400' : ''}"></i>
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between mt-2 pt-2 border-t border-gray-200/60 dark:border-finBorder text-xs">
+            <span class="flex items-center font-mono font-semibold ${isBull ? 'text-bullRed' : 'text-bearBlue'} item-diff-val">
+              <i class="ph-bold ${isBull ? 'ph-caret-up' : 'ph-caret-down'} mr-0.5"></i>
+              ${formatChange(item.change, item.changePercent)}
+            </span>
+            <span class="text-[11px] text-slate-400">52주 최고 ${formatNumber(item.high52w)}</span>
+          </div>
+        `;
+
+        card.addEventListener('click', (e) => {
+          // If clicked the star button, avoid selecting card
+          if (e.target.closest('.star-toggle-btn')) return;
+          selectIndicator(item.id);
+        });
+
+        const starBtn = card.querySelector('.star-toggle-btn');
+        starBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          toggleWatchlist(item.id);
+        });
+
+        container.appendChild(card);
+      });
+    }
+
+    function selectIndicator(id) {
+      currentSelectedId = id;
+      updateMainChart();
+      renderIndicatorsList();
+    }
+
+    function toggleWatchlist(id) {
+      if (watchlist.includes(id)) {
+        watchlist = watchlist.filter(wId => wId !== id);
+      } else {
+        watchlist.push(id);
+      }
+      localStorage.setItem('market_watchlist', JSON.stringify(watchlist));
+      renderIndicatorsList();
+      updateTopCardsWatchState();
+    }
+
+    function updateTopCardsWatchState() {
+      document.querySelectorAll('.watchlist-star').forEach(el => {
+        const id = el.dataset.star;
+        if (watchlist.includes(id)) {
+          el.innerHTML = '<i class="ph-fill ph-star text-amber-400"></i>';
+        } else {
+          el.innerHTML = '<i class="ph ph-star"></i>';
+        }
+      });
+    }
+
+    /* -------------------------------------------------------------
+       6. Marquee Ticker & Global Clock
+    -------------------------------------------------------------- */
+    function populateTicker() {
+      const tickerContainer = document.getElementById('ticker-content');
+      const itemsHtml = marketData.map(item => {
+        const isBull = item.change >= 0;
+        return `
+          <div class="flex items-center gap-2 cursor-pointer hover:opacity-80" onclick="selectIndicator('${item.id}')">
+            <span class="font-bold text-slate-700 dark:text-slate-200">${item.name}</span>
+            <span class="font-mono font-semibold">${formatNumber(item.price)}</span>
+            <span class="font-mono text-[11px] ${isBull ? 'text-bullRed' : 'text-bearBlue'}">
+              ${isBull ? '▲' : '▼'}${Math.abs(item.changePercent).toFixed(2)}%
+            </span>
+          </div>
+        `;
+      }).join(' • ');
+
+      tickerContainer.innerHTML = itemsHtml + ' • ' + itemsHtml; // duplicate for seamless loop
+    }
+
+    function updateLiveClocks() {
+      const now = new Date();
+      // Seoul Time (KST)
+      const seoulTimeStr = now.toLocaleTimeString('ko-KR', { hour12: false, timeZone: 'Asia/Seoul' });
+      const seoulEl = document.getElementById('live-seoul-time');
+      if (seoulEl) seoulEl.innerText = `${seoulTimeStr} KST`;
+
+      // Simple market open/close check logic
+      const hour = now.getHours();
+      const day = now.getDay();
+      const isWeekday = day >= 1 && day <= 5;
+      
+      const krStatus = document.getElementById('seoul-market-status');
+      if (krStatus) {
+        if (isWeekday && hour >= 9 && hour < 15.5) {
+          krStatus.innerText = '정규장 거래중';
+          krStatus.className = 'text-emerald-500 font-semibold';
+        } else {
+          krStatus.innerText = '장 마감';
+          krStatus.className = 'text-slate-400 font-medium';
+        }
+      }
+    }
+
+    /* -------------------------------------------------------------
+       7. Realistic Price Simulation Engine
+    -------------------------------------------------------------- */
+    function startLiveSimulation() {
+      if (liveSimInterval) clearInterval(liveSimInterval);
+
+      liveSimInterval = setInterval(() => {
+        if (!isLiveSimActive) return;
+
+        // Randomly pick 1 to 3 assets to tick
+        const count = Math.floor(Math.random() * 2) + 1;
+        for (let i = 0; i < count; i++) {
+          const randomIndex = Math.floor(Math.random() * marketData.length);
+          const item = marketData[randomIndex];
+
+          // 0.05% ~ 0.25% small tick
+          const deltaPct = (Math.random() * 0.4 - 0.19) / 100;
+          const oldPrice = item.price;
+          const priceDiff = item.price * deltaPct;
+          
+          item.price = Math.max(0.01, item.price + priceDiff);
+          item.change += priceDiff;
+          item.changePercent = ((item.change) / (item.price - item.change)) * 100;
+
+          // Update High/Low
+          if (item.price > item.high) item.high = item.price;
+          if (item.price < item.low) item.low = item.price;
+
+          // Append to history & sparkline
+          item.sparkline.shift();
+          item.sparkline.push(item.price);
+          item.history['1D'][item.history['1D'].length - 1] = item.price;
+
+          // Visual Flash on quick cards
+          triggerFlash(item.id, priceDiff >= 0);
+
+          // Update Top KPI Cards if this is one of them
+          updateTopCardDisplay(item);
+        }
+
+        // If currently selected asset ticked, update chart
+        updateMainChart();
+        updateQuickListPricesOnly();
+        runCalculator(); // Refresh calculator with latest FX
+      }, 2200);
+    }
+
+    function triggerFlash(id, isUp) {
+      const card = document.getElementById(`card-${id}`);
+      if (!card) return;
+      const cls = isUp ? 'flash-up' : 'flash-down';
+      card.classList.remove('flash-up', 'flash-down');
+      void card.offsetWidth; // retrigger reflow
+      card.classList.add(cls);
+    }
+
+    function updateTopCardDisplay(item) {
+      const priceEl = document.getElementById(`card-${item.id}-price`);
+      const diffEl = document.getElementById(`card-${item.id}-diff`);
+      if (!priceEl || !diffEl) return;
+
+      const isBull = item.change >= 0;
+      priceEl.innerText = formatNumber(item.price);
+      priceEl.className = `font-mono text-xl sm:text-2xl font-bold tracking-tight ${isBull ? 'text-bullRed' : 'text-bearBlue'}`;
+
+      diffEl.className = `flex items-center gap-1.5 text-xs font-semibold ${isBull ? 'text-bullRed' : 'text-bearBlue'} mt-0.5`;
+      diffEl.innerHTML = `<i class="ph-bold ${isBull ? 'ph-caret-up' : 'ph-caret-down'}"></i> ${formatChange(item.change, item.changePercent)}`;
+
+      // Update mini sparkline
+      if (miniCharts[item.id]) {
+        miniCharts[item.id].data.datasets[0].data = item.sparkline;
+        miniCharts[item.id].data.datasets[0].borderColor = isBull ? '#F43F5E' : '#3B82F6';
+        miniCharts[item.id].update('none');
+      }
+    }
+
+    function updateQuickListPricesOnly() {
+      marketData.forEach(item => {
+        const card = document.getElementById(`card-${item.id}`);
+        if (!card) return;
+        const isBull = item.change >= 0;
+
+        const priceSpan = card.querySelector('.item-price-val');
+        const diffSpan = card.querySelector('.item-diff-val');
+        if (priceSpan) {
+          priceSpan.innerText = formatNumber(item.price);
+          priceSpan.className = `font-mono text-lg font-extrabold ${isBull ? 'text-bullRed' : 'text-bearBlue'} item-price-val`;
+        }
+        if (diffSpan) {
+          diffSpan.className = `flex items-center font-mono font-semibold ${isBull ? 'text-bullRed' : 'text-bearBlue'} item-diff-val`;
+          diffSpan.innerHTML = `<i class="ph-bold ${isBull ? 'ph-caret-up' : 'ph-caret-down'} mr-0.5"></i> ${formatChange(item.change, item.changePercent)}`;
+        }
+      });
+    }
+
+    /* -------------------------------------------------------------
+       8. Currency & Asset Calculator Logic
+    -------------------------------------------------------------- */
+    function runCalculator() {
+      const amountInput = parseFloat(document.getElementById('calc-amount').value) || 0;
+      const fromCurr = document.getElementById('calc-from').value;
+      const toCurr = document.getElementById('calc-to').value;
+      const resultInput = document.getElementById('calc-result');
+
+      const usdRate = (marketData.find(d => d.id === 'usdkrw') || {}).price || 1332.8;
+      const jpy100Rate = (marketData.find(d => d.id === 'jpykrw') || {}).price || 946.5;
+      const btcRate = (marketData.find(d => d.id === 'btc') || {}).price || 88240000;
+
+      // Base conversion to KRW
+      let inKRW = 0;
+      if (fromCurr === 'KRW') inKRW = amountInput;
+      else if (fromCurr === 'USD') inKRW = amountInput * usdRate;
+      else if (fromCurr === 'JPY') inKRW = (amountInput / 100) * jpy100Rate;
+      else if (fromCurr === 'BTC') inKRW = amountInput * btcRate;
+
+      // From KRW to destination
+      let finalVal = 0;
+      let symbol = '';
+      if (toCurr === 'KRW') {
+        finalVal = inKRW;
+        symbol = ' 원';
+      } else if (toCurr === 'USD') {
+        finalVal = inKRW / usdRate;
+        symbol = ' 달러 ($)';
+      } else if (toCurr === 'JPY') {
+        finalVal = (inKRW / jpy100Rate) * 100;
+        symbol = ' 엔 (¥)';
+      }
+
+      resultInput.value = `${formatNumber(finalVal, toCurr === 'KRW' ? 0 : 2)}${symbol}`;
+    }
+
+    /* -------------------------------------------------------------
+       9. Event Bindings and Initial Setup
+    -------------------------------------------------------------- */
+    function setupEventListeners() {
+      // Live Sim Toggle
+      const simBtn = document.getElementById('live-sim-toggle');
+      simBtn.addEventListener('click', () => {
+        isLiveSimActive = !isLiveSimActive;
+        if (isLiveSimActive) {
+          simBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 text-xs font-semibold border border-emerald-500/30';
+          simBtn.innerHTML = '<i class="ph-fill ph-broadcast animate-pulse text-sm"></i><span class="hidden sm:inline">실시간 틱 반영중</span>';
+        } else {
+          simBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-finCard text-slate-400 text-xs font-semibold border border-gray-300 dark:border-finBorder';
+          simBtn.innerHTML = '<i class="ph-bold ph-pause text-sm"></i><span class="hidden sm:inline">시뮬레이션 일시정지</span>';
+        }
+      });
+
+      // Dark Mode Toggle
+      const themeBtn = document.getElementById('theme-toggle');
+      themeBtn.addEventListener('click', () => {
+        document.documentElement.classList.toggle('dark');
+        setTimeout(() => {
+          if (mainChartInstance) {
+            mainChartInstance.destroy();
+            initMainChart();
+          }
+        }, 150);
+      });
+
+      // Quick KPI Card Clicks
+      document.querySelectorAll('.indicator-quick-card').forEach(card => {
+        card.addEventListener('click', () => {
+          selectIndicator(card.dataset.id);
+        });
+      });
+
+      // Timeframe buttons
+      document.querySelectorAll('.tf-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tf-btn').forEach(b => {
+            b.className = 'tf-btn px-3 py-1 rounded-lg text-slate-600 dark:text-slate-300 hover:text-white';
+          });
+          btn.className = 'tf-btn px-3 py-1 rounded-lg bg-rose-500 text-white shadow-sm';
+          currentTimeframe = btn.dataset.tf;
+          updateMainChart();
+        });
+      });
+
+      // Chart Type Buttons
+      const lineBtn = document.getElementById('chart-type-line');
+      const barBtn = document.getElementById('chart-type-bar');
+      lineBtn.addEventListener('click', () => {
+        currentChartType = 'line';
+        lineBtn.className = 'px-2.5 py-1 rounded-lg bg-rose-500 text-white font-bold';
+        barBtn.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white font-bold';
+        updateMainChart();
+      });
+      barBtn.addEventListener('click', () => {
+        currentChartType = 'bar';
+        barBtn.className = 'px-2.5 py-1 rounded-lg bg-rose-500 text-white font-bold';
+        lineBtn.className = 'px-2.5 py-1 rounded-lg text-slate-400 hover:text-white font-bold';
+        updateMainChart();
+      });
+
+      // Category Tabs
+      document.querySelectorAll('.cat-filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.cat-filter-btn').forEach(b => {
+            b.className = 'cat-filter-btn px-3.5 py-1.5 rounded-xl bg-gray-100 dark:bg-finCard text-slate-600 dark:text-slate-300 text-xs font-semibold whitespace-nowrap hover:bg-gray-200 dark:hover:bg-slate-700';
+          });
+          btn.className = 'cat-filter-btn px-3.5 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-bold whitespace-nowrap shadow-sm';
+          currentCategory = btn.dataset.category;
+          renderIndicatorsList();
+        });
+      });
+
+      // Search Bar
+      const searchInput = document.getElementById('indicator-search');
+      searchInput.addEventListener('input', (e) => {
+        searchQuery = e.target.value;
+        renderIndicatorsList();
+      });
+
+      // Calculator bindings
+      document.getElementById('calc-amount').addEventListener('input', runCalculator);
+      document.getElementById('calc-from').addEventListener('change', runCalculator);
+      document.getElementById('calc-to').addEventListener('change', runCalculator);
+      document.getElementById('swap-calc').addEventListener('click', () => {
+        const fromSel = document.getElementById('calc-from');
+        const toSel = document.getElementById('calc-to');
+        const temp = fromSel.value;
+        // only swap if available in target
+        if ([...toSel.options].some(o => o.value === temp)) {
+          fromSel.value = toSel.value;
+          toSel.value = temp;
+          runCalculator();
+        }
+      });
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initMainChart();
+      initMiniSparklines();
+      renderIndicatorsList();
+      populateTicker();
+      updateLiveClocks();
+      updateTopCardsWatchState();
+      setupEventListeners();
+      runCalculator();
+
+      setInterval(updateLiveClocks, 1000);
+      startLiveSimulation();
+    });
+  </script>
+</body>
+</html>
